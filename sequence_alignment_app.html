@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GenAlign — Sequence Alignment Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #1a100a;
+    --surface:  #111827;
+    --card:     #1a2235;
+    --border:   #1f2d45;
+    --accent:   #00d4ff;
+    --accent2:  #7c3aed;
+    --accent3:  #10b981;
+    --warn:     #f59e0b;
+    --danger:   #ef4444;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --match:    #10b981;
+    --mismatch: #f59e0b;
+    --gap:      #ef4444;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* animated grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .glow-orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+    animation: drift 12s ease-in-out infinite alternate;
+  }
+  .glow-orb-1 { width: 500px; height: 500px; background: rgba(0,212,255,0.06); top: -100px; left: -100px; }
+  .glow-orb-2 { width: 400px; height: 400px; background: rgba(124,58,237,0.07); bottom: -100px; right: -50px; animation-delay: -6s; }
+
+  @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(40px,30px) scale(1.1); } }
+
+  /* ── LAYOUT ── */
+  .wrapper { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+
+  /* ── HEADER ── */
+  header {
+    padding: 48px 0 40px;
+    display: flex; align-items: flex-end; gap: 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+  .logo-mark {
+    width: 52px; height: 52px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 12px;
+    display: grid; place-items: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 22px; font-weight: 700; color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 0 30px rgba(0,212,255,0.3);
+  }
+  .header-text h1 {
+    font-size: clamp(26px, 4vw, 38px);
+    font-weight: 800; letter-spacing: -1px;
+    background: linear-gradient(90deg, #fff 40%, var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    line-height: 1;
+  }
+  .header-text p { color: var(--muted); font-size: 14px; margin-top: 6px; letter-spacing: 0.05em; }
+  .tag {
+    margin-left: auto;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    color: var(--accent);
+    font-size: 11px; font-family: 'Space Mono', monospace;
+    padding: 4px 10px; border-radius: 4px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 32px;
+    margin-bottom: 24px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: rgba(0,212,255,0.2); }
+  .card-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.15em;
+    color: var(--accent); text-transform: uppercase; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ── INPUTS ── */
+  .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  @media(max-width: 600px) { .input-grid { grid-template-columns: 1fr; } }
+
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.05em; }
+  label span { color: var(--accent); font-family: 'Space Mono', monospace; font-size: 13px; }
+
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    letter-spacing: 0.1em;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+  }
+  input[type="text"]:focus, input[type="number"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
+  }
+  input[type="text"]::placeholder { color: var(--muted); letter-spacing: 0.05em; }
+
+  .scoring-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media(max-width: 500px) { .scoring-row { grid-template-columns: 1fr; } }
+
+  .score-input { text-align: center; }
+  .score-badge {
+    display: inline-block;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-family: 'Space Mono', monospace;
+    margin-bottom: 6px;
+  }
+  .badge-match  { background: rgba(16,185,129,0.15); color: var(--match); }
+  .badge-miss   { background: rgba(245,158,11,0.15); color: var(--mismatch); }
+  .badge-gap    { background: rgba(239,68,68,0.15);  color: var(--danger); }
+
+  /* ── BUTTON ── */
+  .run-btn {
+    width: 100%;
+    padding: 15px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 10px;
+    color: #fff; font-family: 'Syne', sans-serif;
+    font-size: 15px; font-weight: 700; letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s, box-shadow 0.2s;
+    box-shadow: 0 4px 20px rgba(0,212,255,0.25);
+    margin-top: 20px;
+  }
+  .run-btn:hover { opacity: 0.9; box-shadow: 0 6px 30px rgba(0,212,255,0.4); }
+  .run-btn:active { transform: scale(0.99); }
+  .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── STATS ROW ── */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  @media(max-width: 600px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+
+  .stat-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    animation: fadeUp 0.4s ease both;
+  }
+  .stat-val { font-size: 28px; font-weight: 800; font-family: 'Space Mono', monospace; line-height: 1; }
+  .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; letter-spacing: 0.05em; }
+
+  /* ── ALIGNMENT DISPLAY ── */
+  .alignment-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+  }
+  .seq-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 4px;
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .seq-label { color: var(--muted); font-size: 11px; width: 36px; flex-shrink: 0; letter-spacing: 0.05em; }
+  .seq-chars { display: flex; gap: 2px; }
+  .ch {
+    width: 22px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 4px; font-size: 13px; font-weight: 700;
+    transition: transform 0.15s;
+  }
+  .ch:hover { transform: scale(1.2); }
+  .ch-match    { background: rgba(16,185,129,0.15); color: var(--match); border: 1px solid rgba(16,185,129,0.3); }
+  .ch-mismatch { background: rgba(245,158,11,0.15); color: var(--mismatch); border: 1px solid rgba(245,158,11,0.3); }
+  .ch-gap      { background: rgba(239,68,68,0.08);  color: var(--danger);   border: 1px dashed rgba(239,68,68,0.3); }
+  .ch-mid      { color: var(--muted); background: transparent; border: none; font-size: 16px; }
+  .ch-mid.match { color: var(--match); }
+  .ch-mid.mismatch { color: var(--mismatch); }
+
+  /* ── DP TABLE ── */
+  .dp-scroll { overflow-x: auto; }
+  .dp-table { border-collapse: collapse; font-family: 'Space Mono', monospace; font-size: 13px; }
+  .dp-table th, .dp-table td {
+    width: 42px; height: 42px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .dp-table th {
+    background: var(--surface);
+    color: var(--accent);
+    font-weight: 700; font-size: 14px;
+    letter-spacing: 0.1em;
+  }
+  .dp-table td { background: var(--card); color: var(--text); transition: background 0.2s; }
+  .dp-table td:hover { background: rgba(0,212,255,0.08); }
+  .dp-table td.on-path {
+    background: rgba(0,212,255,0.15);
+    color: var(--accent);
+    font-weight: 700;
+    box-shadow: inset 0 0 0 2px rgba(0,212,255,0.4);
+  }
+  .dp-table td.origin { background: rgba(124,58,237,0.2); color: #a78bfa; font-weight: 700; }
+
+  /* ── COMPARISON TABLE ── */
+  .cmp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cmp-table th {
+    background: var(--surface);
+    color: var(--accent); font-size: 11px; letter-spacing: 0.1em;
+    padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+  }
+  .cmp-table td { padding: 10px 14px; border-bottom: 1px solid rgba(31,45,69,0.5); }
+  .cmp-table tr:last-child td { border-bottom: none; }
+  .cmp-table tr:hover td { background: rgba(0,212,255,0.03); }
+  .yes { color: var(--match); font-weight: 700; }
+  .no  { color: var(--danger); font-weight: 700; }
+  .partial { color: var(--mismatch); }
+
+  /* ── LEGEND ── */
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  /* ── TABS ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--surface); padding: 4px; border-radius: 10px; border: 1px solid var(--border); }
+  .tab-btn {
+    flex: 1; padding: 10px; border: none; border-radius: 8px;
+    background: transparent; color: var(--muted);
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; letter-spacing: 0.03em;
+  }
+  .tab-btn.active { background: var(--card); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  .fade-up { animation: fadeUp 0.5s ease both; }
+
+  .hidden { display: none; }
+
+  /* ── ERROR ── */
+  .error-box {
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 8px; padding: 12px 16px;
+    color: #fca5a5; font-size: 13px; margin-top: 12px;
+  }
+
+  /* ── GREEDY SECTION ── */
+  .approach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media(max-width: 700px) { .approach-grid { grid-template-columns: 1fr; } }
+  .approach-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+  }
+  .approach-title { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; margin-bottom: 10px; }
+  .approach-score { font-family: 'Space Mono', monospace; font-size: 20px; font-weight: 700; margin: 8px 0; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="glow-orb glow-orb-1"></div>
+<div class="glow-orb glow-orb-2"></div>
+
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo-mark">GA</div>
+    <div class="header-text">
+      <h1>CS501 Project</h1>
+      <p>Needleman-Wunsch · Dynamic Programming</p>
+    </div>
+  </header>
+
+  <!-- INPUT CARD -->
+  <div class="card">
+    <div class="card-title">Input Sequences</div>
+    <div class="input-grid">
+      <div>
+        <label>Sequence 1 &nbsp;<span id="len1">0</span> bp</label>
+        <input type="text" id="seq1" placeholder="e.g. AGCTGAC" value="AGCTGAC" oninput="updateLen()" style="text-transform:uppercase">
+      </div>
+      <div>
+        <label>Sequence 2 &nbsp;<span id="len2">0</span> bp</label>
+        <input type="text" id="seq2" placeholder="e.g. GCTAC" value="GCTAC" oninput="updateLen()" style="text-transform:uppercase">
+      </div>
+    </div>
+
+    <div class="card-title" style="margin-top:8px">Scoring Parameters</div>
+    <div class="scoring-row">
+      <div class="score-input">
+        <div><span class="score-badge badge-match">MATCH</span></div>
+        <label>Reward</label>
+        <input type="number" id="match" value="1" min="-10" max="10">
+      </div>
+      <div class="score-input">
+        <div><span class="score-badge badge-miss">MISMATCH</span></div>
+        <label>Penalty</label>
+        <input type="number" id="mismatch" value="-1" min="-10" max="10">
+      </div>
+      <div class="score-input">
+        <div><span class="score-badge badge-gap">GAP</span></div>
+        <label>Penalty</label>
+        <input type="number" id="gap" value="-2" min="-10" max="10">
+      </div>
+    </div>
+
+    <button class="run-btn" onclick="runAlignment()" id="runBtn">
+      ▶  Run Alignment
+    </button>
+    <div id="errorBox" class="error-box hidden"></div>
+  </div>
+
+  <!-- RESULTS (hidden until run) -->
+  <div id="results" class="hidden">
+
+    <!-- STAT BOXES -->
+    <div class="stats-row">
+      <div class="stat-box" style="animation-delay:0s">
+        <div class="stat-val" id="st-score" style="color:var(--accent)">—</div>
+        <div class="stat-lbl">OPTIMAL SCORE</div>
+      </div>
+      <div class="stat-box" style="animation-delay:0.1s">
+        <div class="stat-val" id="st-matches" style="color:var(--match)">—</div>
+        <div class="stat-lbl">MATCHES</div>
+      </div>
+      <div class="stat-box" style="animation-delay:0.2s">
+        <div class="stat-val" id="st-mismatches" style="color:var(--mismatch)">—</div>
+        <div class="stat-lbl">MISMATCHES</div>
+      </div>
+      <div class="stat-box" style="animation-delay:0.3s">
+        <div class="stat-val" id="st-gaps" style="color:var(--danger)">—</div>
+        <div class="stat-lbl">GAPS</div>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('alignment', this)">Alignment</button>
+      <button class="tab-btn" onclick="switchTab('dptable', this)">DP Matrix</button>
+      <button class="tab-btn" onclick="switchTab('compare', this)">Comparison</button>
+    </div>
+
+    <!-- TAB: ALIGNMENT -->
+    <div id="tab-alignment" class="card fade-up">
+      <div class="card-title">Optimal Alignment  (Needleman-Wunsch)</div>
+      <div class="alignment-block" id="alignDisplay"></div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(16,185,129,0.3);border:1px solid var(--match)"></div> Match</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(245,158,11,0.3);border:1px solid var(--mismatch)"></div> Mismatch</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(239,68,68,0.1);border:1px dashed var(--danger)"></div> Gap</div>
+      </div>
+    </div>
+
+    <!-- TAB: DP TABLE -->
+    <div id="tab-dptable" class="card fade-up hidden">
+      <div class="card-title">DP Matrix  (highlighted = traceback path)</div>
+      <div class="dp-scroll" id="dpTableDiv"></div>
+      <p style="font-size:12px;color:var(--muted);margin-top:12px">
+        <span style="color:var(--accent)">■</span> Traceback path &nbsp;
+        <span style="color:#a78bfa">■</span> Origin dp[0][0]
+      </p>
+    </div>
+
+    <!-- TAB: COMPARISON -->
+    <div id="tab-compare" class="card fade-up hidden">
+      <div class="card-title">Greedy vs DP Comparison</div>
+      <div class="approach-grid" id="compareBoxes" style="margin-bottom:20px"></div>
+
+      <div class="card-title" style="margin-top:8px">Algorithm Comparison Table</div>
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Dynamic Programming</th>
+            <th>Greedy</th>
+            <th>Divide & Conquer</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Optimal Result</td><td class="yes">✓ Always</td><td class="no">✗ Not always</td><td class="yes">✓ Always</td></tr>
+          <tr><td>Time Complexity</td><td>O(mn)</td><td>O(min(m,n))</td><td>O(mn)</td></tr>
+          <tr><td>Space Complexity</td><td>O(mn)</td><td>O(1)</td><td>O(m+n)</td></tr>
+          <tr><td>Overlapping Subproblems</td><td class="yes">✓ Handled</td><td class="no">✗ Ignored</td><td class="partial">~ Partial</td></tr>
+          <tr><td>Implementation</td><td>Simple</td><td>Very Simple</td><td>Complex</td></tr>
+          <tr><td>Best Use Case</td><td>General alignment</td><td>Approximate only</td><td>Very long seqs</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /results -->
+
+</div><!-- /wrapper -->
+
+<script>
+// ═══════════════════════════════════════════════════
+//  PURE JAVASCRIPT IMPLEMENTATION OF ALL ALGORITHMS
+//  (mirrors the Python code exactly)
+// ═══════════════════════════════════════════════════
+
+// ── 1. BUILD DP TABLE ──────────────────────────────
+function buildDpTable(s1, s2, matchScore, mismatchPen, gapPen) {
+  const m = s1.length, n = s2.length;
+  const dp = Array.from({length: m+1}, () => new Array(n+1).fill(0));
+
+  // base cases
+  for (let i = 0; i <= m; i++) dp[i][0] = i * gapPen;
+  for (let j = 0; j <= n; j++) dp[0][j] = j * gapPen;
+
+  // fill
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const diag = s1[i-1] === s2[j-1] ? matchScore : mismatchPen;
+      dp[i][j] = Math.max(
+        dp[i-1][j-1] + diag,   // match / mismatch
+        dp[i-1][j]   + gapPen, // deletion
+        dp[i][j-1]   + gapPen  // insertion
+      );
+    }
+  }
+  return dp;
+}
+
+// ── 2. TRACEBACK ───────────────────────────────────
+function traceback(dp, s1, s2, matchScore, mismatchPen, gapPen) {
+  let a1 = [], a2 = [], mid = [];
+  const path = new Set(); // "i,j" strings on traceback path
+  let i = s1.length, j = s2.length;
+
+  while (i > 0 || j > 0) {
+    path.add(`${i},${j}`);
+    if (i > 0 && j > 0) {
+      const diag = s1[i-1] === s2[j-1] ? matchScore : mismatchPen;
+      if (dp[i][j] === dp[i-1][j-1] + diag) {
+        a1.push(s1[i-1]); a2.push(s2[j-1]);
+        mid.push(s1[i-1] === s2[j-1] ? '|' : ':');
+        i--; j--; continue;
+      }
+    }
+    if (i > 0 && dp[i][j] === dp[i-1][j] + gapPen) {
+      a1.push(s1[i-1]); a2.push('-'); mid.push(' '); i--;
+    } else {
+      a1.push('-'); a2.push(s2[j-1]); mid.push(' '); j--;
+    }
+  }
+  path.add('0,0');
+  return {
+    a1: a1.reverse().join(''),
+    a2: a2.reverse().join(''),
+    mid: mid.reverse().join(''),
+    path
+  };
+}
+
+// ── 3. GREEDY ALIGN ────────────────────────────────
+function greedyAlign(s1, s2, matchScore, mismatchPen, gapPen) {
+  let a1=[], a2=[], mid=[], i=0, j=0, score=0;
+  while (i < s1.length && j < s2.length) {
+    if (s1[i] === s2[j]) {
+      a1.push(s1[i]); a2.push(s2[j]); mid.push('|');
+      score += matchScore; i++; j++;
+    } else if (i+1 < s1.length && s1[i+1] === s2[j]) {
+      a1.push(s1[i]); a2.push('-'); mid.push(' ');
+      score += gapPen; i++;
+    } else if (j+1 < s2.length && s1[i] === s2[j+1]) {
+      a1.push('-'); a2.push(s2[j]); mid.push(' ');
+      score += gapPen; j++;
+    } else {
+      a1.push(s1[i]); a2.push(s2[j]); mid.push(':');
+      score += mismatchPen; i++; j++;
+    }
+  }
+  while (i < s1.length) { a1.push(s1[i]); a2.push('-'); mid.push(' '); score += gapPen; i++; }
+  while (j < s2.length) { a1.push('-'); a2.push(s2[j]); mid.push(' '); score += gapPen; j++; }
+  return { a1: a1.join(''), a2: a2.join(''), mid: mid.join(''), score };
+}
+
+// ── HELPERS ───────────────────────────────────────
+function updateLen() {
+  document.getElementById('len1').textContent = document.getElementById('seq1').value.length;
+  document.getElementById('len2').textContent = document.getElementById('seq2').value.length;
+}
+updateLen();
+
+function validate(s) {
+  return /^[ACGTacgt]+$/.test(s);
+}
+
+function switchTab(tab, btn) {
+  ['alignment','dptable','compare'].forEach(t => {
+    document.getElementById('tab-'+t).classList.add('hidden');
+  });
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  btn.classList.add('active');
+}
+
+// ── MAIN RUN ──────────────────────────────────────
+function runAlignment() {
+  const s1  = document.getElementById('seq1').value.toUpperCase().trim();
+  const s2  = document.getElementById('seq2').value.toUpperCase().trim();
+  const ms  = parseInt(document.getElementById('match').value);
+  const mp  = parseInt(document.getElementById('mismatch').value);
+  const gp  = parseInt(document.getElementById('gap').value);
+
+  const errBox = document.getElementById('errorBox');
+  errBox.classList.add('hidden');
+
+  if (!s1 || !s2) { showError('Please enter both sequences.'); return; }
+  if (!validate(s1) || !validate(s2)) { showError('Sequences must only contain A, C, G, T.'); return; }
+  if (s1.length > 30 || s2.length > 30) { showError('Keep sequences ≤ 30 characters for display clarity.'); return; }
+
+  // run DP
+  const dp = buildDpTable(s1, s2, ms, mp, gp);
+  const { a1, a2, mid, path } = traceback(dp, s1, s2, ms, mp, gp);
+
+  // stats
+  const matches    = [...mid].filter(c => c === '|').length;
+  const mismatches = [...mid].filter(c => c === ':').length;
+  const gaps       = [...mid].filter(c => c === ' ').length;
+  const score      = dp[s1.length][s2.length];
+
+  document.getElementById('st-score').textContent     = score;
+  document.getElementById('st-matches').textContent   = matches;
+  document.getElementById('st-mismatches').textContent= mismatches;
+  document.getElementById('st-gaps').textContent      = gaps;
+
+  // render alignment
+  renderAlignment(a1, a2, mid);
+
+  // render DP table
+  renderDpTable(dp, s1, s2, path);
+
+  // render comparison
+  const gr = greedyAlign(s1, s2, ms, mp, gp);
+  renderComparison(a1, a2, mid, score, gr);
+
+  document.getElementById('results').classList.remove('hidden');
+}
+
+function showError(msg) {
+  const b = document.getElementById('errorBox');
+  b.textContent = '⚠ ' + msg;
+  b.classList.remove('hidden');
+}
+
+function charClass(idx, mid) {
+  const c = mid[idx];
+  if (c === '|') return 'ch-match';
+  if (c === ':') return 'ch-mismatch';
+  return 'ch-gap';
+}
+
+function renderAlignment(a1, a2, mid) {
+  const div = document.getElementById('alignDisplay');
+  const makeRow = (label, chars, isMid) => {
+    let html = `<div class="seq-row"><span class="seq-label">${label}</span><div class="seq-chars">`;
+    for (let i = 0; i < chars.length; i++) {
+      if (isMid) {
+        const cls = mid[i] === '|' ? 'match' : mid[i] === ':' ? 'mismatch' : '';
+        const sym = mid[i] === '|' ? '│' : mid[i] === ':' ? '·' : ' ';
+        html += `<span class="ch ch-mid ${cls}">${sym}</span>`;
+      } else {
+        html += `<span class="ch ${charClass(i, mid)}">${chars[i]}</span>`;
+      }
+    }
+    html += '</div></div>';
+    return html;
+  };
+  div.innerHTML = makeRow('SEQ1', a1, false) + makeRow('', mid, true) + makeRow('SEQ2', a2, false);
+}
+
+function renderDpTable(dp, s1, s2, path) {
+  const div = document.getElementById('dpTableDiv');
+  let html = '<table class="dp-table"><thead><tr>';
+  html += '<th></th><th>—</th>';
+  for (const c of s2) html += `<th>${c}</th>`;
+  html += '</tr></thead><tbody>';
+
+  for (let i = 0; i <= s1.length; i++) {
+    html += '<tr>';
+    html += `<th>${i === 0 ? '—' : s1[i-1]}</th>`;
+    for (let j = 0; j <= s2.length; j++) {
+      const key = `${i},${j}`;
+      const cls = i===0&&j===0 ? 'origin' : path.has(key) ? 'on-path' : '';
+      html += `<td class="${cls}">${dp[i][j]}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  div.innerHTML = html;
+}
+
+function renderComparison(dpA1, dpA2, dpMid, dpScore, gr) {
+  const div = document.getElementById('compareBoxes');
+
+  const makeBox = (title, a1, a2, mid, score, color) => {
+    const matches = [...mid].filter(c=>c==='|').length;
+    const gaps    = [...mid].filter(c=>c===' ').length;
+    let seqHtml = '';
+    for (let i = 0; i < a1.length; i++) {
+      const cls = mid[i]==='|'?'ch-match':mid[i]===':'?'ch-mismatch':'ch-gap';
+      seqHtml += `<span class="ch ${cls}" style="width:18px;height:22px;font-size:11px">${a1[i]}</span>`;
+    }
+    return `
+      <div class="approach-box">
+        <div class="approach-title" style="color:${color}">${title}</div>
+        <div class="approach-score" style="color:${color}">${score > 0 ? '+' : ''}${score}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${matches} matches · ${gaps} gaps</div>
+        <div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:4px">${seqHtml}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:2px">
+          ${[...a2].map((c,i)=>`<span class="ch ${mid[i]==='|'?'ch-match':mid[i]===':'?'ch-mismatch':'ch-gap'}" style="width:18px;height:22px;font-size:11px">${c}</span>`).join('')}
+        </div>
+      </div>`;
+  };
+
+  div.innerHTML =
+    makeBox('▶ DP (Optimal)', dpA1, dpA2, dpMid, dpScore, 'var(--accent)') +
+    makeBox('▷ Greedy', gr.a1, gr.a2, gr.mid, gr.score,
+      gr.score < dpScore ? 'var(--danger)' : 'var(--match)');
+}
+</script>
+</body>
+</html>
